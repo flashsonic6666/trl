@@ -461,7 +461,7 @@ class GRPOTrainer(Trainer):
         logits = logits[:, :-1, :]  
         #print(f"logits.shape after slicing last token: {logits.shape}")
 
-        # Select only logits for the last `logits_to_keep` tokens
+        # Select only logits for the last logits_to_keep tokens
         logits = logits[:, -logits_to_keep:]
         input_ids_slice = input_ids[:, -logits_to_keep:]
 
@@ -481,10 +481,6 @@ class GRPOTrainer(Trainer):
 
         # **Select only the log probabilities of the generated tokens**
         log_probs = torch.gather(log_probs, dim=-1, index=input_ids_slice.unsqueeze(-1)).squeeze(-1)
-
-        # Clamp log_probs to avoid NaNs or extreme values
-        log_probs = torch.clamp(log_probs, min=torch.finfo(torch.float32).eps)
-        #print(f"Post softmax log_probs min: {log_probs.min()}, max: {log_probs.max()}, mean: {log_probs.mean()}")
 
         # Check for NaNs/Infs
         if torch.isnan(log_probs).any():
@@ -734,9 +730,9 @@ class GRPOTrainer(Trainer):
 
         # Add the most recent prompt for debugging purposes
         if hasattr(self, "_last_logged_prompts") and self._last_logged_prompts:
-            logs["example_prompt"] = self._last_logged_prompts[0][:100]  # Only log the first one
+            logs["example_prompt"] = self._last_logged_prompts[0]  # Only log the first one
         if hasattr(self, "_last_logged_completions") and self._last_logged_completions:
-            logs["example_completion"] = self._last_logged_completions[0][:100]  # Only log the first one
+            logs["example_completion"] = self._last_logged_completions[0] # Only log the first one
 
         if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
             super().log(logs, start_time)
