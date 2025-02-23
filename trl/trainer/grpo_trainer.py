@@ -733,7 +733,13 @@ class GRPOTrainer(Trainer):
             logs["example_prompt"] = self._last_logged_prompts[0]  # Only log the first one
         if hasattr(self, "_last_logged_completions") and self._last_logged_completions:
             logs["example_completion"] = self._last_logged_completions[0] # Only log the first one
-
+        # Log the ground truth if available
+        if hasattr(self, "_last_logged_ground_truth") and self._last_logged_ground_truth:
+            logs["example_ground_truth"] = self._last_logged_ground_truth[0]
+        # Log the image path (or file name) if available
+        if hasattr(self, "_last_logged_images") and self._last_logged_images:
+            logs["example_image_path"] = self._last_logged_images[0]
+            
         if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
             super().log(logs, start_time)
         else:  # transformers<=4.46

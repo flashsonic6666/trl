@@ -67,7 +67,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         image_token_id = self.model.config.image_token_id
         image_token = self.image_processor.tokenizer.decode([image_token_id])
 
-        completion_start = "Let me solve this step by step.\n<think>"
+        completion_start = "<think> Let me solve this step by step."
         
         # Use the prompt template function
         prompt_text = self.prompt_template_fn(image_token, completion_start)
@@ -159,7 +159,9 @@ class VLMGRPOTrainer(GRPOTrainer):
         # Here, we expect the ground truth to be present in the dataset.
         # It might be different based on the prompt/reward you are using.
         # For instance, for SMILES, we use x["SMILES"]
-        ground_truth = [x[self.ground_truth_column] for x in inputs]  
+        ground_truth = [x[self.ground_truth_column] for x in inputs]
+        self._last_logged_ground_truth = ground_truth  # Save ground truth for logging
+
         # The reward function (passed in via the trainer constructor in experiments.py)
         rewards = self.reward_funcs(prompts, completions_text, ground_truth)
         rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=device)
