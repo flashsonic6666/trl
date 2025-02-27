@@ -10,6 +10,13 @@ _tmp*
 tmp*
 tags
 
+# Checkpoints
+Qwen2-*
+
+# Images
+pubchem
+indigo_simple_render
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

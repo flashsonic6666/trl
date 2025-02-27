@@ -47,39 +47,100 @@ def has_aromatic_ring_reward(prompts, completions, aromatic_ground_truth):
         rewards.append(reward + bonus)
     return rewards
 
-def smiles_match_reward(prompts, completions, ground_truth_smiles):
+# import re
+# from rdkit import Chem
+# def smiles_match_reward(prompts, completions, ground_truth_smiles, length_reward=False, valid_reward=False):
+#     rewards = []
+#     for prompt, completion, true_smiles in zip(prompts, completions, ground_truth_smiles):
+#         # Ensure completion matches exactly the expected format.
+#         match = re.fullmatch(r"<think>(.*?)</think><answer>(.*?)</answer>", completion, re.DOTALL)
+#         if not match:
+#             rewards.append(-1.0)
+#             continue  # Skip further processing if format is invalid
+        
+#         # Base reward for valid format.
+#         base_reward = -0.9
+        
+#         # Initialize bonus values.
+#         bonus_length = 0.0
+#         bonus_valid = 0.0
+        
+#         # If enabled, calculate length bonus.
+#         if length_reward:
+#             bonus_length = 0.1 * (len(completion.split()) / 512)
+        
+#         # Extract answer content.
+#         answer_content = match.group(2).strip()
+        
+#         try:
+#             # Try to convert the answer SMILES.
+#             mol_pred = Chem.MolFromSmiles(answer_content)
+#             # If valid_reward is enabled and the SMILES is valid, add bonus.
+#             if valid_reward and mol_pred is not None:
+#                 bonus_valid = 0.1
+#             # Convert ground-truth SMILES.
+#             mol_true = Chem.MolFromSmiles(true_smiles.strip())
+#             # If both SMILES are valid, compare their canonical forms.
+#             if mol_pred is not None and mol_true is not None:
+#                 canonical_pred = Chem.MolToSmiles(mol_pred, canonical=True)
+#                 canonical_true = Chem.MolToSmiles(mol_true, canonical=True)
+#                 if canonical_pred == canonical_true:
+#                     base_reward = 1.0
+#         except Exception:
+#             # If any error occurs, keep base_reward as -0.9 (and no valid bonus is added).
+#             pass
+        
+#         total_reward = base_reward + bonus_valid + bonus_length
+#         rewards.append(total_reward)
+#     return rewards
+
+import re
+from rdkit import Chem
+def smiles_match_reward(prompts, completions, ground_truth_smiles, length_reward=False, valid_reward=False):
     rewards = []
     for prompt, completion, true_smiles in zip(prompts, completions, ground_truth_smiles):
-        only_allowed = only_has_allowed_tags(completion)
-        think_match = re.search(r"<think>(.*?)</think>", completion, re.DOTALL)
-        answer_match = re.search(r"<answer>(.*?)</answer>", completion, re.DOTALL)
-        bonus = 0.01 * len(think_match.group(1).split()) if think_match else 0.0
+        # Check that the completion is exactly in the desired format.
+        match = re.fullmatch(r"<think>(.*?)</think>\s*<answer>(.*?)</answer>", completion, re.DOTALL)
 
-        if think_match and answer_match:
-            predicted_smiles = answer_match.group(1).strip()
-            # Try to canonicalize both the predicted and ground truth SMILES.
-            # Oh yea also random but i had this idea at some point to add a small reward 
-            # (like maybe -0.8) if the generated SMILES is valid (e.g. do try Chem.MolFromSmiles 
-            # and if there's no error that implies a valid SMILES).
-            try:
-                mol_pred = Chem.MolFromSmiles(predicted_smiles)
-                mol_true = Chem.MolFromSmiles(true_smiles.strip())
-                if mol_pred is not None and mol_true is not None:
-                    canonical_pred = Chem.MolToSmiles(mol_pred, canonical=True)
-                    canonical_true = Chem.MolToSmiles(mol_true, canonical=True)
-                    if canonical_pred == canonical_true:
-                        reward = 1.0
-                    else:
-                        reward = -0.8  # reduced penalty since the generated SMILES is valid
-                else:
-                    # Predicted SMILES is invalid but formatting is correct.
-                    reward = -0.9
-            except Exception as e:
-                reward = -0.9
-        else:
-            reward = -0.9 if only_allowed else -1.0
-        rewards.append(reward + bonus)
+        if not match:
+            rewards.append(-1.0)
+            continue
+        
+        # Base reward for valid format.
+        base_reward = -0.9
+        
+        # Calculate length bonus if enabled.
+        bonus_length = 0.0
+        if length_reward:
+            bonus_length = 0.1 * (len(completion.split()) / 512)
+        
+        # Extract the SMILES from the answer tag.
+        answer_content = match.group(2).strip()
+        bonus_valid = 0.0
+        
+        try:
+            # Parse the SMILES.
+            mol_pred = Chem.MolFromSmiles(answer_content)
+            mol_true = Chem.MolFromSmiles(true_smiles.strip())
+            # If both SMILES are valid, compare their canonical forms.
+            if mol_pred is not None and mol_true is not None:
+                canonical_pred = Chem.MolToSmiles(mol_pred, canonical=True)
+                canonical_true = Chem.MolToSmiles(mol_true, canonical=True)
+                if canonical_pred == canonical_true:
+                    # Correct answer: reward is exactly 1.
+                    rewards.append(1.0)
+                    continue
+            # If not correct but valid_reward is enabled and the answer SMILES is valid, add bonus.
+            if valid_reward and mol_pred is not None:
+                bonus_valid = 0.1
+        except Exception:
+            # If an exception occurs, assume SMILES is invalid.
+            pass
+        
+        total_reward = base_reward + bonus_valid + bonus_length
+        rewards.append(total_reward)
     return rewards
+
 
 # --- Prompt templates ---
 def prompt_template_smiles(image_token, completion_start):
@@ -122,6 +183,7 @@ Explain your reasoning inside <think> </think> and provide the final count insid
 <|im_start|>assistant
 {completion_start}"""
 
+from functools import partial
 # A helper to select reward and prompt functions by name:
 def get_reward_fn(name):
     if name == "hydrogen_count":
@@ -130,6 +192,12 @@ def get_reward_fn(name):
         return has_aromatic_ring_reward
     elif name == "smiles_match":
         return smiles_match_reward
+    elif name == "smiles_match_with_length":
+        return partial(smiles_match_reward, length_reward=True)
+    elif name == "smiles_match_with_valid":
+        return partial(smiles_match_reward, valid_reward=True)
+    elif name == "smiles_match_with_length_and_valid":
+        return partial(smiles_match_reward, length_reward=True, valid_reward=True)
     else:
         raise ValueError(f"Unknown reward function: {name}")
 

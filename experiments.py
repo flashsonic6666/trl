@@ -16,12 +16,12 @@ from reward_and_prompt_utils import get_reward_fn, get_prompt_template
 # experiments.py
 
 # Configuration variables
-DATASET_FILE = "synthetic/indigo_balanced_long.csv"  # Change dataset easily
-REWARD_FN_NAME = "has_aromatic_ring"  # Options: "smiles_match", "has_aromatic_ring", "hydrogen_count"
-PROMPT_TEMPLATE = "aromatic"  # Options: "smiles", "aromatic", "hydrogen"
+DATASET_FILE = "indigo_simple_render/simple_molecules.csv"  # Change dataset easily
+REWARD_FN_NAME = "smiles_match_with_length_and_valid"  # Options: "smiles_match", "has_aromatic_ring", "hydrogen_count"
+PROMPT_TEMPLATE = "smiles"  # Options: "smiles", "aromatic", "hydrogen"
 MODEL_NAME = "Qwen/Qwen2-VL-2B-Instruct"  # Model to use for training
-OUTPUT_DIR = "Qwen2-VL-2B-GRPO-aromatic-2genn"  # Output directory for training
-GROUND_TRUTH_COLUMN = "has_aromatic_ring"  # Column name for ground truth
+OUTPUT_DIR = "Qwen2-VL-2B-GRPO-smiles-length-valid"  # Output directory for training
+GROUND_TRUTH_COLUMN = "SMILES"  # Column name for ground truth
 TRAIN_BATCH_SIZE = 2  # Batch size for training
 EVAL_BATCH_SIZE = 1  # Batch size for evaluation
 MAX_PROMPT_LENGTH = 1024  # Maximum prompt length
