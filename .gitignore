@@ -9,6 +9,7 @@
 _tmp*
 tmp*
 tags
+*.txt
 
 # Checkpoints
 Qwen2-*

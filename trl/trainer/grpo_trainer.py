@@ -31,6 +31,7 @@ from torch.utils.data import Sampler
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
+    AutoModelForVision2Seq,
     AutoTokenizer,
     GenerationConfig,
     PreTrainedModel,
@@ -186,6 +187,7 @@ class GRPOTrainer(Trainer):
         model: Union[str, PreTrainedModel],
         reward_funcs: Union[RewardFunc, list[RewardFunc]],
         args: GRPOConfig = None,
+        model_type: str = "causal",  # New parameter: "causal" or "vision"
         train_dataset: Optional[Union[Dataset, IterableDataset]] = None,
         eval_dataset: Optional[Union[Dataset, IterableDataset, dict[str, Union[Dataset, IterableDataset]]]] = None,
         processing_class: Optional[PreTrainedTokenizerBase] = None,
@@ -194,6 +196,10 @@ class GRPOTrainer(Trainer):
         optimizers: tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LambdaLR]] = (None, None),
         peft_config: Optional["PeftConfig"] = None,
     ):
+        # Validate model_type
+        assert model_type in ["causal", "vision"], "model_type must be either 'causal' or 'vision'"
+        self.model_type = model_type
+
         # Args
         if args is None:
             model_name = model if isinstance(model, str) else model.config._name_or_path
@@ -203,6 +209,10 @@ class GRPOTrainer(Trainer):
         # Models
         # Trained model
         model_init_kwargs = args.model_init_kwargs or {}
+
+        # Choose the correct model class
+        ModelClass = AutoModelForCausalLM if model_type == "causal" else AutoModelForVision2Seq
+
         if isinstance(model, str):
             model_id = model
             torch_dtype = model_init_kwargs.get("torch_dtype")
@@ -220,7 +230,7 @@ class GRPOTrainer(Trainer):
             model_init_kwargs["use_cache"] = (
                 False if args.gradient_checkpointing else model_init_kwargs.get("use_cache")
             )
-            model = AutoModelForCausalLM.from_pretrained(model, **model_init_kwargs)
+            model = ModelClass.from_pretrained(model, **model_init_kwargs)
         else:
             model_id = model.config._name_or_path
             if args.model_init_kwargs is not None:
@@ -234,7 +244,7 @@ class GRPOTrainer(Trainer):
 
         # Reference model
         if is_deepspeed_zero3_enabled():
-            self.ref_model = AutoModelForCausalLM.from_pretrained(model_id, **model_init_kwargs)
+            self.ref_model = ModelClass.from_pretrained(model_id, **model_init_kwargs)
         elif peft_config is None:
             # If PEFT configuration is not provided, create a reference model based on the initial model.
             self.ref_model = create_reference_model(model)
@@ -697,7 +707,15 @@ class GRPOTrainer(Trainer):
 
         # x - x.detach() allows for preserving gradients from x
         advantages = inputs["advantages"]
+
+        # Ensure `advantages` has the same batch size as `per_token_logps`
+        if advantages.shape[0] != per_token_logps.shape[0]:
+            num_return_sequences = per_token_logps.shape[0] // advantages.shape[0]
+            print(f"Repeating advantages {num_return_sequences} times to match per_token_logps shape")
+            advantages = advantages.repeat_interleave(num_return_sequences, dim=0)
+
         per_token_loss = torch.exp(per_token_logps - per_token_logps.detach()) * advantages.unsqueeze(1)
+
         per_token_loss = -(per_token_loss - self.beta * per_token_kl)
         loss = ((per_token_loss * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
 

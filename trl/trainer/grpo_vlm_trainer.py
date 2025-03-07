@@ -5,11 +5,13 @@ from datasets import load_dataset
 from transformers import (
     AutoProcessor,
     GenerationConfig,
+    AutoModelForVision2Seq,
+    AutoModelForCausalLM,
 )
-from transformers import AutoModelForVision2Seq  # assumed class for SmolVLM; adjust if needed
 from trl import GRPOConfig, GRPOTrainer
 import re
 from rdkit import Chem
+import torch.distributed as dist
 
 # ============================================================================
 # 1. Create a subclass of GRPOTrainer that supports vision-language inputs.
@@ -20,15 +22,36 @@ from rdkit import Chem
 #      - Calls model.generate with the extra image tensor.
 # ============================================================================
 class VLMGRPOTrainer(GRPOTrainer):
-    def __init__(self, prompt_template_fn=None, ground_truth_column=None, *args, **kwargs):
+    def __init__(self, model_type: str = "vision", prompt_template_fn=None, ground_truth_column=None, *args, **kwargs):
         """
         In addition to the usual GRPOTrainer arguments, the dataset is expected to have
         "file_path" and "hydrogen_atom_count" columns.
         """
+        assert model_type in ["vision"] # "model_type must be 'vision'
+        self.model_type = model_type  # Store model type
+        
+        # Ensure model_type is passed down to GRPOTrainer
+        kwargs["model_type"] = model_type
+
+        # Determine the correct model class
+        ModelClass = AutoModelForVision2Seq if model_type == "vision" else AutoModelForCausalLM
+
+        # If model is already loaded, don't reload it.
+        if isinstance(kwargs["model"], torch.nn.Module):
+            self.model = kwargs["model"]
+        else:
+            self.model = ModelClass.from_pretrained(kwargs["model"])  
+
+
         super().__init__(*args, **kwargs)
         # Instead of a text-only tokenizer, load the multimodal processor.
         # We assume the model’s identifier works for AutoProcessor.
-        self.image_processor = AutoProcessor.from_pretrained(self.model.config._name_or_path)
+        # Use multimodal processor for vision models, otherwise tokenizer
+        if model_type == "vision":
+            self.image_processor = AutoProcessor.from_pretrained(self.model.config._name_or_path)
+        else:
+            self.processor = self.processing_class  # Use the tokenizer for causal models
+
         self.reward_funcs = self.reward_funcs[0] # We only have one reward function for now
 
         # Adjust the generation configuration.
@@ -39,7 +62,9 @@ class VLMGRPOTrainer(GRPOTrainer):
             pad_token_id=self.image_processor.tokenizer.pad_token_id
             if hasattr(self.image_processor, "tokenizer")
             else self.image_processor.pad_token_id,
+            num_return_sequences=self.args.num_generations,
         )
+
 
         # Store the prompt template function (or use a default)
         self.prompt_template_fn = prompt_template_fn or (lambda image_token, completion_start: 
@@ -67,7 +92,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         image_token_id = self.model.config.image_token_id
         image_token = self.image_processor.tokenizer.decode([image_token_id])
 
-        completion_start = "<think> Let me solve this step by step."
+        completion_start = "Let me solve this step by step. <think> "
         
         # Use the prompt template function
         prompt_text = self.prompt_template_fn(image_token, completion_start)
@@ -97,6 +122,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         # Generate completions.
         # ------------------------------
         # We pass both text and image inputs to generate the output.
+
         with torch.no_grad():
             prompt_completion_ids = self.model.generate(
                 input_ids=input_ids,
@@ -125,6 +151,20 @@ class VLMGRPOTrainer(GRPOTrainer):
             eos_idx[has_eos] = is_eos[has_eos].int().argmax(dim=1)
         sequence_indices = torch.arange(is_eos.size(1), device=device).expand(is_eos.size(0), -1)
         completion_mask = (sequence_indices <= eos_idx.unsqueeze(1)).int()
+
+        # --- FIX FOR BATCH SIZE: Repeat the attention_mask if needed ---
+        # If batch sizes don't match, repeat the prompt tensors.
+        if input_ids.shape[0] != completion_ids.shape[0]:
+            num_return_sequences = completion_ids.shape[0] // input_ids.shape[0]
+            print(f"Repeating input_ids {num_return_sequences} times to match completion_ids shape")
+            input_ids = input_ids.repeat(num_return_sequences, 1)
+            
+        # Similarly, if attention_mask wasn't already repeated:
+        if attention_mask.shape[0] != completion_ids.shape[0]:
+            num_return_sequences = completion_ids.shape[0] // attention_mask.shape[0]
+            print(f"Repeating attention_mask {num_return_sequences} times to match completion_ids shape")
+            attention_mask = attention_mask.repeat(num_return_sequences, 1)
+
 
         # ------------------------------
         # Compute per-token log-probabilities using the reference model.

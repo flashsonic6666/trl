@@ -7,8 +7,7 @@ from transformers import AutoModelForVision2Seq, AutoProcessor
 from torchvision import transforms
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"  # Set GPU to use
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"  # Set GPU to use
 
 # Import utility functions
 from reward_and_prompt_utils import get_reward_fn, get_prompt_template
@@ -20,10 +19,10 @@ DATASET_FILE = "indigo_simple_render/simple_molecules.csv"  # Change dataset eas
 REWARD_FN_NAME = "smiles_match_with_length_and_valid"  # Options: "smiles_match", "has_aromatic_ring", "hydrogen_count"
 PROMPT_TEMPLATE = "smiles"  # Options: "smiles", "aromatic", "hydrogen"
 MODEL_NAME = "Qwen/Qwen2-VL-2B-Instruct"  # Model to use for training
-OUTPUT_DIR = "Qwen2-VL-2B-GRPO-smiles-length-valid"  # Output directory for training
+OUTPUT_DIR = "Qwen2-VL-2B-GRPO-Good-Prompt"  # Output directory for training
 GROUND_TRUTH_COLUMN = "SMILES"  # Column name for ground truth
-TRAIN_BATCH_SIZE = 2  # Batch size for training
-EVAL_BATCH_SIZE = 1  # Batch size for evaluation
+PER_DEVICE_TRAIN_BATCH_SIZE = 2  # Batch size for training
+PER_DEVICE_EVAL_BATCH_SIZE = 1  # Batch size for evaluation
 MAX_PROMPT_LENGTH = 1024  # Maximum prompt length
 MAX_COMPLETION_LENGTH = 512  # Maximum completion length
 TEMPERATURE = 0.9  # Temperature for sampling
@@ -71,14 +70,15 @@ prompt_template_fn = get_prompt_template(PROMPT_TEMPLATE)
 training_args = GRPOConfig(
     output_dir=OUTPUT_DIR,
     logging_steps=10,
-    per_device_train_batch_size=TRAIN_BATCH_SIZE,  # Adjust batch size based on GPU memory
-    per_device_eval_batch_size=EVAL_BATCH_SIZE,
+    per_device_train_batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,  # Adjust batch size based on GPU memory
+    per_device_eval_batch_size=PER_DEVICE_EVAL_BATCH_SIZE,
     max_prompt_length=MAX_PROMPT_LENGTH,
     max_completion_length=MAX_COMPLETION_LENGTH,
     temperature=TEMPERATURE,
     use_vllm=USE_VLLM,  # No vLLM for now
     sync_ref_model=SYNC_REF_MODEL,
     num_generations=NUM_GENERATIONS,  # Number of generations per prompt
+    #deepspeed="./deepspeed_config_zero2.json"  # Path to your DeepSpeed config file (ending in zero2 or zero3)
 )
 
 # Load model
@@ -87,6 +87,7 @@ model = AutoModelForVision2Seq.from_pretrained(MODEL_NAME)
 # Instantiate the trainer, now with custom reward and prompt functions.
 trainer = VLMGRPOTrainer(
     model=model,
+    #model_type="vision",  # Use 'causal' for a language model
     reward_funcs=reward_fn,
     args=training_args,
     train_dataset=dataset,

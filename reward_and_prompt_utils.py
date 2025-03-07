@@ -100,7 +100,7 @@ def smiles_match_reward(prompts, completions, ground_truth_smiles, length_reward
     rewards = []
     for prompt, completion, true_smiles in zip(prompts, completions, ground_truth_smiles):
         # Check that the completion is exactly in the desired format.
-        match = re.fullmatch(r"<think>(.*?)</think>\s*<answer>(.*?)</answer>", completion, re.DOTALL)
+        match = re.fullmatch(r"Let me solve this step by step\.\s*<think>(.*?)</think>\s*<answer>(.*?)</answer>", completion, re.DOTALL)
 
         if not match:
             rewards.append(-1.0)
@@ -149,7 +149,7 @@ You are a helpful assistant. You first think about the reasoning process and the
 <|im_end|>
 
 <|im_start|>user
-Here is an image {image_token}. Identify the chemical structure shown and provide its SMILES representation.
+Here is an image <|vision_start|> {image_token} <|vision_end|>. Identify the chemical structure shown and provide its SMILES representation.
 Think step by step inside <think> </think> tags, and provide the final SMILES string inside <answer> </answer> tags.
 For example: <think> The molecule consists of a benzene ring with an attached hydroxyl group. </think> <answer>Oc1ccccc1</answer>.
 <|im_end|>
