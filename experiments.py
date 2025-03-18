@@ -7,7 +7,7 @@ from transformers import AutoModelForVision2Seq, AutoProcessor
 from torchvision import transforms
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "4"  # Set GPU to use
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"  # Set GPU to use
 
 # Import utility functions
 from reward_and_prompt_utils import get_reward_fn, get_prompt_template
@@ -16,12 +16,12 @@ from reward_and_prompt_utils import get_reward_fn, get_prompt_template
 
 # Configuration variables
 DATASET_FILE = "indigo_simple_render/simple_molecules.csv"  # Change dataset easily
-REWARD_FN_NAME = "smiles_match_with_length_and_valid"  # Options: "smiles_match", "has_aromatic_ring", "hydrogen_count"
+REWARD_FN_NAME = "smiles_match"  # Options: "smiles_match", "has_aromatic_ring", "hydrogen_count"
 PROMPT_TEMPLATE = "smiles"  # Options: "smiles", "aromatic", "hydrogen"
-MODEL_NAME = "Qwen/Qwen2-VL-2B-Instruct"  # Model to use for training
-OUTPUT_DIR = "Qwen2-VL-2B-GRPO-Good-Prompt"  # Output directory for training
+MODEL_NAME = "Qwen/Qwen2-VL-7B-Instruct"  # Model to use for training
+OUTPUT_DIR = "Qwen2-VL-7B-GRPO-Good-Prompt-Instruct"  # Output directory for training
 GROUND_TRUTH_COLUMN = "SMILES"  # Column name for ground truth
-PER_DEVICE_TRAIN_BATCH_SIZE = 2  # Batch size for training
+PER_DEVICE_TRAIN_BATCH_SIZE = 1  # Batch size for training
 PER_DEVICE_EVAL_BATCH_SIZE = 1  # Batch size for evaluation
 MAX_PROMPT_LENGTH = 1024  # Maximum prompt length
 MAX_COMPLETION_LENGTH = 512  # Maximum completion length
@@ -78,7 +78,10 @@ training_args = GRPOConfig(
     use_vllm=USE_VLLM,  # No vLLM for now
     sync_ref_model=SYNC_REF_MODEL,
     num_generations=NUM_GENERATIONS,  # Number of generations per prompt
-    #deepspeed="./deepspeed_config_zero2.json"  # Path to your DeepSpeed config file (ending in zero2 or zero3)
+    deepspeed="./deepspeed_config_zero3.json",  # Path to your DeepSpeed config file (ending in zero2 or zero3)
+    bf16=True,  # Matches --bf16
+    gradient_checkpointing=True,  # Matches --gradient_checkpointing
+    save_total_limit=1,  # Keep only 1 checkpoint to save space
 )
 
 # Load model

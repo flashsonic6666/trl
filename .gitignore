@@ -14,6 +14,9 @@ tags
 # Checkpoints
 Qwen2-*
 
+# Model Output Files
+scripts/outputs/
+
 # Images
 pubchem
 indigo_simple_render
