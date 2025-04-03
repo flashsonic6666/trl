@@ -34,101 +34,6 @@ INITED_OBJ = []
 class GlobalNamespace(argparse.Namespace):
     pass
 
-
-def get_object(object_name, object_type):
-    if object_name not in REGISTRIES["{}_REGISTRY".format(object_type.upper())]:
-        raise Exception(
-            "INVALID {} NAME: {}. AVAILABLE {}".format(
-                object_type.upper(),
-                object_name,
-                REGISTRIES["{}_REGISTRY".format(object_type.upper())].keys(),
-            )
-        )
-    return REGISTRIES["{}_REGISTRY".format(object_type.upper())][object_name]
-
-def set_nox_type(object_name):
-    """
-    Build argparse action class for registry items
-    Used to add and set object-level args
-
-    Args:
-        object_name (str): kind of nox class uses (e.g., dataset, model, lightning)
-
-    Returns:
-        argparse.Action: action for specific nox class
-    """
-
-    class NoxAction(argparse.Action):
-        def __init__(
-            self,
-            option_strings,
-            dest,
-            nargs=None,
-            const=None,
-            default=None,
-            type=None,
-            choices=None,
-            required=False,
-            help=None,
-            metavar=None,
-        ):
-            super().__init__(
-                option_strings=option_strings,
-                dest=dest,
-                nargs=nargs,
-                const=const,
-                default=default,
-                type=type,
-                choices=choices,
-                required=required,
-                help=help,
-                metavar=metavar,
-            )
-            self.is_nox_action = True
-            self.object_name = object_name
-
-        def __call__(self, parser, namespace, values, option_string=None) -> None:
-            setattr(namespace, self.dest, values)
-
-        def add_args(self, parser, values) -> None:
-            """
-            Add object-level args when an add_argument is called
-
-            Args:
-                parser (argparse.parser): nox parser object
-                values (Union[list, str]): argument values inputted
-            """
-            if isinstance(values, list):
-                for v in values:
-                    obj_val_str = f"{v}_{object_name}"
-                    # if object has already been called, conflict arises with add parse called multiple times
-                    if obj_val_str not in INITED_OBJ:
-                        get_object(v, object_name).add_args(parser)
-                        INITED_OBJ.append(obj_val_str)
-
-            elif isinstance(values, str):
-                obj_val_str = f"{values}_{object_name}"
-                # if object has already been called, conflict arises with add parse called multiple times
-                if obj_val_str not in INITED_OBJ:
-                    get_object(values, object_name).add_args(parser)
-                    INITED_OBJ.append(obj_val_str)
-
-        def set_args(self, args, val) -> None:
-            """
-            Call object-level set_args method
-
-            Args:
-                args (argparse.namespace): global args
-                val (Union[list,str]): value for argument
-            """
-            if isinstance(val, list):
-                for v in val:
-                    get_object(v, object_name).set_args(args)
-            elif isinstance(val, str):
-                get_object(val, object_name).set_args(args)
-
-    return NoxAction
-
 def parse_dispatcher_config(config):
     """
     Parses an experiment config, and creates jobs. For flags that are expected to be a single item,
@@ -226,94 +131,6 @@ def parse_dispatcher_config(config):
 
     return experiments, flags, experiment_axies
 
-
-def prepare_training_config_for_eval(train_config):
-    """Convert training config to an eval config for testing.
-
-    Parameters
-    ----------
-    train_config: dict
-         config with the following structure:
-              {
-                   "train_config": ,   # path to train config
-                   "log_dir": ,        # log directory used by dispatcher during training
-                   "eval_args": {}     # test set-specific arguments beyond default
-              }
-
-    Returns
-    -------
-    experiments: list
-    flags: list
-    experiment_axies: list
-    """
-
-    train_args = json.load(open(train_config["train_config"], "r"))
-
-    experiments, _, _ = parse_dispatcher_config(train_args)
-    stem_names = [md5(e) for e in experiments]
-    eval_args = copy.deepcopy(train_args)
-    eval_args["cartesian_hyperparams"].update(train_config["eval_args"])
-
-    # reset defaults
-    eval_args["cartesian_hyperparams"]["train"] = [False]
-    eval_args["cartesian_hyperparams"]["test"] = [True]
-    eval_args["cartesian_hyperparams"]["from_checkpoint"] = train_config[
-        "eval_args"
-    ].get("from_checkpoint", [True])
-    eval_args["cartesian_hyperparams"]["gpus"] = [1]
-    eval_args["cartesian_hyperparams"]["logger_tags"][0] += " eval"
-    eval_args["available_gpus"] = train_config["available_gpus"]
-    eval_args["script"] = train_config["script"]
-
-    experiments, flags, experiment_axies = parse_dispatcher_config(eval_args)
-
-    if "checkpoint_path" not in eval_args["cartesian_hyperparams"]:
-        for (idx, e), s in zip(enumerate(experiments), stem_names):
-            experiments[idx] += " --checkpoint_path {}".format(
-                os.path.join(train_config["log_dir"], "{}.args".format(s))
-            )
-
-    return experiments, flags, experiment_axies
-
-
-def parse_augmentations(augmentations):
-    """
-    Parse the list of augmentations, given by configuration, into a list of
-    tuple of the augmentations name and a dictionary containing additional args.
-
-    The augmentation is assumed to be of the form 'name/arg1=value/arg2=value'
-
-    :raw_augmentations: list of strings [unparsed augmentations]
-    :returns: list of parsed augmentations [list of (name,additional_args)]
-
-    """
-    raw_transformers = augmentations
-
-    transformers = []
-    for t in raw_transformers:
-        arguments = t.split("/")
-        name = arguments[0]
-        if name == "":
-            raise Exception(EMPTY_NAME_ERR)
-
-        kwargs = {}
-        if len(arguments) > 1:
-            for a in arguments[1:]:
-                splited = a.split("=")
-                var = splited[0]
-                val = splited[1] if len(splited) > 1 else None
-                if var == "":
-                    raise Exception(EMPTY_NAME_ERR)
-                try:
-                    kwargs[var] = float(val)
-                except ValueError:
-                    kwargs[var] = val
-
-        transformers.append((name, kwargs))
-
-    return transformers
-
-
 def get_parser():
     global_namespace = GlobalNamespace(allow_abbrev=False)
 
@@ -342,363 +159,7 @@ def get_parser():
         default=False,
         help="Whether or not to run model on test set",
     )
-    parser.add_argument(
-        "--predict",
-        action="store_true",
-        default=False,
-        help="Whether to run model for pure prediction where labels are not known",
-    )
-    parser.add_argument(
-        "--eval_on_train",
-        action="store_true",
-        default=False,
-        help="Whether or not to evaluate model on train split",
-    )
-    parser.add_argument(
-        "--eval_on_train_multigpu",
-        action="store_true",
-        default=False,
-        help="Whether or not to evaluate model on train split using ddp",
-    )
-    parser.add_argument(
-        "--replicate",
-        type=int,
-        default=1,
-        help="The replicate number for the experiment for running same experiments multiple times",
-    )
-    parser.add_argument(
-        "--shuffle_eval_loader",
-        action="store_true",
-        default=False,
-        help="shuffle the dev and test datasets",
-    )
-
-    # -------------------------------------
-    # Data
-    # -------------------------------------
-    parser.add_argument(
-        "--dataset_name",
-        type=str,
-        action=set_nox_type("dataset"),
-        default="mnist",
-        help="Name of dataset",
-    )
-    parser.add_argument(
-        "--img_size",
-        type=int,
-        nargs="+",
-        default=[256, 256],
-        help="Width and height of image in pixels. [default: [256,256]]",
-    )
-    parser.add_argument(
-        "--num_chan", type=int, default=3, help="Number of channels for input image"
-    )
-    parser.add_argument(
-        "--img_mean",
-        type=float,
-        nargs="+",
-        default=[128.1722],
-        help="Mean of image per channel",
-    )
-    parser.add_argument(
-        "--img_std",
-        type=float,
-        nargs="+",
-        default=[87.1849],
-        help="Standard deviation  of image per channel",
-    )
-    parser.add_argument(
-        "--img_file_type",
-        type=str,
-        default="png",
-        choices=["png", "dicom"],
-        help="Type of image. one of [png, dicom]",
-    )
-
-    # -------------------------------------
-    # Augmentations
-    # -------------------------------------
-    parser.add_argument(
-        "--train_rawinput_augmentation_names",
-        nargs="*",
-        action=set_nox_type("augmentation"),
-        default=[],
-        help='List of image-transformations to use. Usage: "--train_rawinput_augmentations trans1/arg1=5/arg2=2 trans2 trans3/arg4=val"',
-    )
-    parser.add_argument(
-        "--train_tnsr_augmentation_names",
-        nargs="*",
-        action=set_nox_type("augmentation"),
-        default=[],
-        help='List of image-transformations to use. Usage: "--train_tnsr_augmentations trans1/arg1=5/arg2=2 trans2 trans3/arg4=val"',
-    )
-    parser.add_argument(
-        "--test_rawinput_augmentation_names",
-        nargs="*",
-        action=set_nox_type("augmentation"),
-        default=[],
-        help="List of image-transformations to use for the dev and test dataset",
-    )
-    parser.add_argument(
-        "--test_tnsr_augmentation_names",
-        nargs="*",
-        action=set_nox_type("augmentation"),
-        default=[],
-        help="List of image-transformations to use for the dev and test dataset",
-    )
-
-    # -------------------------------------
-    # Losses
-    # -------------------------------------
-
-    # losses and metrics
-    parser.add_argument(
-        "--loss_names",
-        type=str,
-        action=set_nox_type("loss"),
-        nargs="*",
-        default=[],
-        help="Name of loss",
-    )
-    parser.add_argument(
-        "--loss_names_for_eval",
-        type=str,
-        action=set_nox_type("loss"),
-        nargs="*",
-        default=None,
-        help="Name of loss",
-    )
-
-    # -------------------------------------
-    # Metrics
-    # -------------------------------------
-
-    parser.add_argument(
-        "--metric_names",
-        type=str,
-        action=set_nox_type("metric"),
-        nargs="*",
-        default=[],
-        help="Name of performance metric",
-    )
-    parser.add_argument(
-        "--metric_names_for_eval",
-        type=str,
-        action=set_nox_type("metric"),
-        nargs="*",
-        default=None,
-        help="Name of metric",
-    )
-
-    # -------------------------------------
-    # Training Module
-    # -------------------------------------
-
-    parser.add_argument(
-        "--lightning_name",
-        type=str,
-        action=set_nox_type("lightning"),
-        default="base",
-        help="Name of lightning module",
-    )
-
-    # -------------------------------------
-    # Hyper parameters
-    # -------------------------------------
-    # learning
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=32,
-        help="Batch size for training [default: 128]",
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        default=0.001,
-        help="Initial learning rate [default: 0.001]",
-    )
-    parser.add_argument(
-        "--dropout",
-        type=float,
-        default=0.25,
-        help="Amount of dropout to apply on last hidden layer [default: 0.25]",
-    )
-    parser.add_argument(
-        "--optimizer_name",
-        type=str,
-        action=set_nox_type("optimizer"),
-        default="adam",
-        help="Optimizer to use [default: adam]",
-    )
-    parser.add_argument(
-        "--momentum", type=float, default=0, help="Momentum to use with SGD"
-    )
-    parser.add_argument(
-        "--lr_decay",
-        type=float,
-        default=0.1,
-        help="Initial learning rate [default: 0.5]",
-    )
-    parser.add_argument(
-        "--weight_decay",
-        type=float,
-        default=0,
-        help="L2 Regularization penaty [default: 0]",
-    )
-
-    # tune
-    parser.add_argument(
-        "--tune_hyperopt",
-        action="store_true",
-        default=False,
-        help="Whether to run hyper-parameter optimization",
-    )
-    parser.add_argument(
-        "--tune_search_alg",
-        type=str,
-        default="search",
-        help="Optimization algorithm",
-    )
-    parser.add_argument(
-        "--tune_hyperparam_names",
-        type=str,
-        nargs="*",
-        default=[],
-        help="Name of parameters being optimized",
-    )
-
-    # -------------------------------------
-    # Schedule
-    # -------------------------------------
-    parser.add_argument(
-        "--scheduler_name",
-        type=str,
-        action=set_nox_type("scheduler"),
-        default="reduce_on_plateau",
-        help="Name of scheduler",
-    )
-    parser.add_argument(
-        "--cosine_annealing_period",
-        type=int,
-        default=10,
-        help="length of period of lr cosine anneal",
-    )
-    parser.add_argument(
-        "--cosine_annealing_period_scaling",
-        type=int,
-        default=2,
-        help="how much to multiply each period in successive annealing",
-    )
-    parser.add_argument(
-        "--patience",
-        type=int,
-        default=5,
-        help="Number of epochs without improvement on dev before halving learning rate and reloading best model [default: 5]",
-    )
-    parser.add_argument(
-        "--num_adv_steps",
-        type=int,
-        default=1,
-        help="Number of steps for domain adaptation discriminator per one step of encoding model [default: 5]",
-    )
-
-    # -------------------------------------
-    # Callbacks
-    # -------------------------------------
-
-    parser.add_argument(
-        "--callback_names",
-        type=str,
-        action=set_nox_type("callback"),
-        nargs="*",
-        default=["checkpointer", "lr_monitor"],
-        help="Lightning callbacks",
-    )
-
-    parser.add_argument(
-        "--monitor",
-        type=str,
-        default=None,
-        help="Name of metric to use to decide when to save model",
-    )
-
-    parser.add_argument(
-        "--checkpoint_save_top_k",
-        type=int,
-        default=1,
-        help="the best k models according to the quantity monitored will be saved",
-    )
-    parser.add_argument(
-        "--checkpoint_save_last",
-        action="store_true",
-        default=False,
-        help="save the last model to last.ckpt",
-    )
-
-    # -------------------------------------
-    # Model checkpointing
-    # -------------------------------------
-
-    parser.add_argument(
-        "--checkpoint_dir", type=str, default="snapshot", help="Where to dump the model"
-    )
-    parser.add_argument(
-        "--from_checkpoint",
-        action="store_true",
-        default=False,
-        help="Whether loading a model from a saved checkpoint",
-    )
-    parser.add_argument(
-        "--relax_checkpoint_matching",
-        action="store_true",
-        default=False,
-        help="Do not enforce that the keys in checkpoint_path match the keys returned by this module’s state dict",
-    )
-    parser.add_argument(
-        "--checkpoint_path",
-        type=str,
-        default=None,
-        help="Filename of model snapshot to load[default: None]",
-    )
-
-    # -------------------------------------
-    # Storing model outputs
-    # -------------------------------------
-    parser.add_argument(
-        "--save_hiddens",
-        action="store_true",
-        default=False,
-        help="Save hidden repr from each image to an npz based off results path, git hash and exam name",
-    )
-    parser.add_argument(
-        "--save_predictions",
-        action="store_true",
-        default=False,
-        help="Save hidden repr from each image to an npz based off results path, git hash and exam name",
-    )
-    parser.add_argument(
-        "--inference_dir",
-        type=str,
-        default="hiddens/test_run",
-        help='Dir to store hiddens npy"s when store_hiddens is true',
-    )
-
-    # -------------------------------------
-    # Run outputs
-    # -------------------------------------
-    parser.add_argument(
-        "--results_path",
-        type=str,
-        default="logs/test.args",
-        help="Where to save the result logs",
-    )
-    parser.add_argument(
-        "--experiment_name",
-        type=str,
-        help="defined either automatically by dispatcher.py or time in main.py. Keep without default",
-    )
-
+    
     # -------------------------------------
     # System
     # -------------------------------------
@@ -712,36 +173,6 @@ def get_parser():
     # cache
     parser.add_argument(
         "--cache_path", type=str, default=None, help="Dir to cache images."
-    )
-
-    # -------------------------------------
-    # Logging
-    # -------------------------------------
-
-    parser.add_argument(
-        "--logger_name",
-        type=str,
-        action=set_nox_type("logger"),
-        choices=["tensorboard", "comet", "wandb"],
-        default="tensorboard",
-        help="experiment logger to use",
-    )
-    parser.add_argument(
-        "--logger_tags", nargs="*", default=[], help="List of tags for logger"
-    )
-    parser.add_argument("--project_name", default="CancerCures", help="Comet project")
-    parser.add_argument("--workspace", default="pgmikhael", help="Comet workspace")
-    parser.add_argument(
-        "--log_gen_image",
-        action="store_true",
-        default=False,
-        help="Whether to log sample generated image to comet",
-    )
-    parser.add_argument(
-        "--log_profiler",
-        action="store_true",
-        default=False,
-        help="Log profiler times to logger",
     )
 
     # -------------------------------------
@@ -766,7 +197,6 @@ def get_parser():
 
     return parser
 
-
 def parse_args(args_strings=None):
     # run
     # Lightning 2.0 removes add_argparse_args
@@ -789,15 +219,38 @@ def parse_args(args_strings=None):
             help="Number of GPUs to train on",
         )
 
+    parser.add_argument("--dataset_file", type=str, required=True)
+    parser.add_argument("--model_name", type=str, required=True)
+    parser.add_argument("--reward_fn_name", type=str, required=True)
+    parser.add_argument("--prompt_template", type=str, required=True)
+    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument("--ground_truth_column", type=str, required=True)
+
+    # Optional with defaults
+    parser.add_argument("--per_device_train_batch_size", type=int, default=8)
+    parser.add_argument("--per_device_eval_batch_size", type=int, default=8)
+    parser.add_argument("--max_prompt_length", type=int, default=128)
+    parser.add_argument("--max_completion_length", type=int, default=128)
+    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--use_vllm", action="store_true")
+    parser.add_argument("--sync_ref_model", action="store_true")
+    parser.add_argument("--num_generations", type=int, default=1)
+    parser.add_argument("--results_path", type=str, default="results")
+    parser.add_argument("--deepspeed", type=str, default=None, help="Path to deepspeed config file")
+    parser.add_argument("--bf16", action="store_true", help="Use bfloat16 precision")
+    parser.add_argument("--gradient_checkpointing", action="store_true", help="Enable gradient checkpointing")
+    parser.add_argument("--save_total_limit", type=int, default=1, help="Max number of saved checkpoints")
+    parser.add_argument("--cuda_visible_devices", type=str, default=None, help="Comma-separated list of CUDA devices to use")
+    parser.add_argument("--experiment_name", type=str, default="default_experiment", help="Name of the experiment")
+
+
     if args_strings is None:
         args = parser.parse_args()
     else:
         args = parser.parse_args(args_strings)
 
-    # legacy - fix arg changes
-    if hasattr(args, "gpus") and not hasattr(Trainer, "add_argparse_args"):
-        args.devices = args.gpus
-
+    args.devices = "auto"
+        
     # using gpus
     if (isinstance(args.gpus, str) and len(args.gpus.split(",")) > 1) or (
         isinstance(args.gpus, int) and args.gpus > 1
@@ -824,7 +277,7 @@ def parse_args(args_strings=None):
     for argname, argval in vars(args).items():
         if argname in args_for_noxs:
             args_for_noxs[argname].set_args(args, argval)
-
+    '''
     # parse augmentations
     args.train_rawinput_augmentations = parse_augmentations(
         args.train_rawinput_augmentation_names
@@ -838,6 +291,7 @@ def parse_args(args_strings=None):
     args.test_tnsr_augmentations = parse_augmentations(
         args.test_tnsr_augmentation_names
     )
+    '''
 
     # parse tune parameters
     # args = parse_tune_params(args)

@@ -10,7 +10,7 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"  # Set GPU to use
 
 # Import utility functions
-from reward_and_prompt_utils import get_reward_fn, get_prompt_template
+from trl.reward_and_prompt_utils import get_reward_fn, get_prompt_template
 
 # experiments.py
 

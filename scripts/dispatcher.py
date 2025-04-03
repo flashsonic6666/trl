@@ -8,8 +8,7 @@ import subprocess
 import multiprocessing
 import pickle
 import json
-from . import parsing
-
+import parsing
 
 EXPERIMENT_CRASH_MSG = "ALERT! job:[{}] has crashed! Check logfile at:[{}]"
 CONFIG_NOT_FOUND_MSG = "ALERT! {} config {} file does not exist!"
