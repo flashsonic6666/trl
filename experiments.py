@@ -18,8 +18,8 @@ from trl.reward_and_prompt_utils import get_reward_fn, get_prompt_template
 DATASET_FILE = "indigo_simple_render/simple_molecules.csv"  # Change dataset easily
 REWARD_FN_NAME = "smiles_match"  # Options: "smiles_match", "has_aromatic_ring", "hydrogen_count"
 PROMPT_TEMPLATE = "smiles"  # Options: "smiles", "aromatic", "hydrogen"
-MODEL_NAME = "Qwen/Qwen2-VL-7B-Instruct"  # Model to use for training
-OUTPUT_DIR = "Qwen2-VL-7B-GRPO-Good-Prompt-Instruct"  # Output directory for training
+MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct"  # Model to use for training
+OUTPUT_DIR = "Qwen2-VL-2.5B-GRPO-Good-Prompt-Instruct"  # Output directory for training
 GROUND_TRUTH_COLUMN = "SMILES"  # Column name for ground truth
 PER_DEVICE_TRAIN_BATCH_SIZE = 1  # Batch size for training
 PER_DEVICE_EVAL_BATCH_SIZE = 1  # Batch size for evaluation

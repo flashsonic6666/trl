@@ -219,6 +219,7 @@ def parse_args(args_strings=None):
             help="Number of GPUs to train on",
         )
 
+    # Dataset
     parser.add_argument("--dataset_file", type=str, required=True)
     parser.add_argument("--model_name", type=str, required=True)
     parser.add_argument("--reward_fn_name", type=str, required=True)
@@ -236,12 +237,15 @@ def parse_args(args_strings=None):
     parser.add_argument("--sync_ref_model", action="store_true")
     parser.add_argument("--num_generations", type=int, default=1)
     parser.add_argument("--results_path", type=str, default="results")
+
+    # Deepspeed
     parser.add_argument("--deepspeed", type=str, default=None, help="Path to deepspeed config file")
     parser.add_argument("--bf16", action="store_true", help="Use bfloat16 precision")
     parser.add_argument("--gradient_checkpointing", action="store_true", help="Enable gradient checkpointing")
     parser.add_argument("--save_total_limit", type=int, default=1, help="Max number of saved checkpoints")
     parser.add_argument("--cuda_visible_devices", type=str, default=None, help="Comma-separated list of CUDA devices to use")
     parser.add_argument("--experiment_name", type=str, default="default_experiment", help="Name of the experiment")
+    parser.add_argument("--local_rank", type=int, default=0, help="Used for distributed training.")
 
 
     if args_strings is None:

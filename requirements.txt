@@ -1,4 +1,14 @@
-accelerate
-datasets
-rich
-transformers>=4.46.0
+# Core
+torch==2.4.0+cu121
+torchvision==0.19.0+cu121
+transformers==4.47.0
+accelerate==0.27.2
+peft==0.8.2  # latest as of now and works with TRL + Transformers 4.47
+
+# Optional/Extended
+deepspeed==0.14.2
+flash-attn==2.4.2
+vllm==0.6.0
+xformers==0.0.27.post2
+
+# Need trl (pip install -e .) to use TRL

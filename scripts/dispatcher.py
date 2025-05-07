@@ -67,7 +67,15 @@ def launch_experiment(script, gpu, flag_string):
     log_path = "{}.txt".format(log_stem)
     results_path = "{}.args".format(log_stem)
 
+    '''
+    # PYTHON
     experiment_string = "CUDA_VISIBLE_DEVICES={} python -u scripts/{}.py {} --results_path {} --experiment_name {}".format(
+        gpu, script, flag_string, log_stem, log_name
+    )  # use log_stem instead of results_path, add extensions in main/learn.py
+    '''
+
+    # DEEPSPEED
+    experiment_string = "deepspeed --include=localhost:{} scripts/{}.py {} --results_path {} --experiment_name {}".format(
         gpu, script, flag_string, log_stem, log_name
     )  # use log_stem instead of results_path, add extensions in main/learn.py
 

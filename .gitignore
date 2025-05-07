@@ -13,6 +13,7 @@ tags
 
 # Checkpoints
 Qwen2-*
+Qwen2.5-*
 
 # Model Output Files
 scripts/outputs/
@@ -20,6 +21,8 @@ scripts/outputs/
 # Images
 pubchem
 indigo_simple_render
+synthetic
+sft_qwen2_dataset
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

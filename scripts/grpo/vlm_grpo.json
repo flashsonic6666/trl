@@ -11,10 +11,10 @@
       "smiles"
     ],
     "model_name": [
-      "Qwen/Qwen2-VL-7B-Instruct"
+      "Qwen/Qwen2.5-3B-Instruct"
     ],
     "output_dir": [
-      "Qwen2-VL-7B-GRPO-Good-Prompt-Instruct"
+      "Qwen2-VL-2.5B-GRPO-Good-Prompt-Instruct"
     ],
     "ground_truth_column": [
       "SMILES"

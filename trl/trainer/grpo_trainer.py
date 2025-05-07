@@ -32,6 +32,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     Qwen2VLForConditionalGeneration,
+    Qwen2_5_VLForConditionalGeneration,
     AutoTokenizer,
     GenerationConfig,
     PreTrainedModel,
@@ -238,7 +239,12 @@ class GRPOTrainer(Trainer):
             model_init_kwargs["use_cache"] = False
             print("Using cache? ", model_init_kwargs["use_cache"])
             if "Qwen2-VL" in model_id:
+                #model_init_kwargs["low_cpu_mem_usage"] = False
+                #model_init_kwargs["torch_dtype"] = torch.bfloat16
+                #model_init_kwargs["trust_remote_code"] = True
                 self.ref_model = Qwen2VLForConditionalGeneration.from_pretrained(model_id, **model_init_kwargs)
+            elif "Qwen2.5-VL" in model_id:
+                self.ref_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_id, **model_init_kwargs)
             else:
                 self.ref_model = AutoModelForCausalLM.from_pretrained(model_id, **model_init_kwargs)
         elif peft_config is None:
