@@ -445,8 +445,8 @@ class SFTTrainer(Trainer):
             shift_labels = inputs["labels"][..., 1:].contiguous()
 
             # Gather logits and labels from all GPUs first
-            shift_logits = self.accelerator.gather_for_metrics(shift_logits)
-            shift_labels = self.accelerator.gather_for_metrics(shift_labels)
+            # shift_logits = self.accelerator.gather_for_metrics(shift_logits)
+            # shift_labels = self.accelerator.gather_for_metrics(shift_labels)
 
             # Then compute accuracy on the gathered tensors
             if self.accelerator.is_main_process:

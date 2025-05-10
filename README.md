@@ -204,3 +204,15 @@ pip install -e .[dev]
 ## License
 
 This repository's source code is available under the [Apache-2.0 License](LICENSE).
+
+## Extra files
+
+- experiments_sft.py: Calls SFTtrainer to run SFT
+- sft_eval.py: Runs inference from SFT checkpoints
+- model_server.py: Server to help run inference on checkpoints
+- sft_interactive_viewer.ipynb: Takes a .json file created by sft_eval.py to visualize the model inference
+- Dataset files:
+    - pubchem (generated from RDKkit)
+    - indigo_simple_render (generated with Indigo)
+    - synthetic
+    - data_organometallic (organometallic compounds, generated with RDKkit)
