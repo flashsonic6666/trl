@@ -31,6 +31,8 @@ from torch.utils.data import Sampler
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
+    Qwen2VLForConditionalGeneration,
+    Qwen2_5_VLForConditionalGeneration,
     AutoTokenizer,
     GenerationConfig,
     PreTrainedModel,
@@ -234,7 +236,17 @@ class GRPOTrainer(Trainer):
 
         # Reference model
         if is_deepspeed_zero3_enabled():
-            self.ref_model = AutoModelForCausalLM.from_pretrained(model_id, **model_init_kwargs)
+            model_init_kwargs["use_cache"] = False
+            print("Using cache? ", model_init_kwargs["use_cache"])
+            if "Qwen2-VL" in model_id:
+                #model_init_kwargs["low_cpu_mem_usage"] = False
+                #model_init_kwargs["torch_dtype"] = torch.bfloat16
+                #model_init_kwargs["trust_remote_code"] = True
+                self.ref_model = Qwen2VLForConditionalGeneration.from_pretrained(model_id, **model_init_kwargs)
+            elif "Qwen2.5-VL" in model_id:
+                self.ref_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_id, **model_init_kwargs)
+            else:
+                self.ref_model = AutoModelForCausalLM.from_pretrained(model_id, **model_init_kwargs)
         elif peft_config is None:
             # If PEFT configuration is not provided, create a reference model based on the initial model.
             self.ref_model = create_reference_model(model)
@@ -432,6 +444,7 @@ class GRPOTrainer(Trainer):
     def _get_eval_sampler(self, eval_dataset) -> Sampler:
         return RepeatRandomSampler(eval_dataset, self.num_generations)
 
+    '''
     # Get the per-token log probabilities for the completions for the model and the reference model
     def _get_per_token_logps(self, model, input_ids, attention_mask, logits_to_keep):
         # We add 1 to `logits_to_keep` because the last logits of the sequence is later excluded
@@ -443,23 +456,62 @@ class GRPOTrainer(Trainer):
         # See https://github.com/huggingface/trl/issues/2770
         logits = logits[:, -logits_to_keep:]
         return selective_log_softmax(logits, input_ids)  #  compute logprobs for the input tokens
+    '''
+    
+    def _get_per_token_logps(self, model, input_ids, attention_mask, logits_to_keep):
+        #print("=== DEBUG: Entering _get_per_token_logps ===")
+        #print(f"input_ids.shape: {input_ids.shape}, attention_mask.shape: {attention_mask.shape}")
+        #print(f"logits_to_keep: {logits_to_keep}")
 
-    def _move_model_to_vllm(self):
-        with unwrap_model_for_generation(
-            self.model, self.accelerator, gather_deepspeed3_params=self.args.ds3_gather_for_generation
-        ) as unwrapped_model:
-            if is_compiled_module(unwrapped_model):
-                state_dict = unwrapped_model._orig_mod.state_dict()
-            else:
-                state_dict = unwrapped_model.state_dict()
-        if self.accelerator.is_main_process:
-            llm_model = self.llm.llm_engine.model_executor.driver_worker.model_runner.model
-            llm_model.load_weights(state_dict.items())
+        # Call the model
+        logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
+
+        # Check shape before slicing
+        #print(f"logits.shape before slicing: {logits.shape}")  # Expected (B, L, V)
+
+        # Remove last logit if necessary
+        logits = logits[:, :-1, :]  
+        #print(f"logits.shape after slicing last token: {logits.shape}")
+
+        # Select only logits for the last logits_to_keep tokens
+        logits = logits[:, -logits_to_keep:]
+        input_ids_slice = input_ids[:, -logits_to_keep:]
+
+        # Check final shapes
+        #print(f"logits.shape after slicing for logits_to_keep: {logits.shape}")  # Expected (B, logits_to_keep, V)
+        #print(f"input_ids_slice.shape: {input_ids_slice.shape}")  # Expected (B, logits_to_keep)
+
+        #print(f"logits min: {logits.min()}, max: {logits.max()}, mean: {logits.mean()}")
+
+        # Compute log probabilities
+        # **Numerical Stability Fix: Softmax shift**
+        logits_max = logits.max(dim=-1, keepdim=True)[0]  # (B, logits_to_keep, 1)
+        logits = logits - logits_max  # Prevents large exponentials in softmax
+
+        # Compute log probabilities safely
+        log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+
+        # **Select only the log probabilities of the generated tokens**
+        log_probs = torch.gather(log_probs, dim=-1, index=input_ids_slice.unsqueeze(-1)).squeeze(-1)
+
+        # Check for NaNs/Infs
+        if torch.isnan(log_probs).any():
+            print("WARNING: NaNs detected in log_probs!")
+        if torch.isinf(log_probs).any():
+            print("WARNING: Infs detected in log_probs!")
+
+        #print("=== DEBUG: Exiting _get_per_token_logps ===")
+        return log_probs
+
 
     def _prepare_inputs(self, inputs: dict[str, Union[torch.Tensor, Any]]) -> dict[str, Union[torch.Tensor, Any]]:
         device = self.accelerator.device
         prompts = [x["prompt"] for x in inputs]
         prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
+        
+        # Store the latest prompts
+        self._last_logged_prompts = prompts_text
+        
         prompt_inputs = self.processing_class(
             prompts_text, return_tensors="pt", padding=True, padding_side="left", add_special_tokens=False
         )
@@ -474,7 +526,16 @@ class GRPOTrainer(Trainer):
         if self.args.use_vllm:
             # First, have main process load weights if needed
             if self.state.global_step != self._last_loaded_step:
-                self._move_model_to_vllm()
+                with unwrap_model_for_generation(
+                    self.model, self.accelerator, gather_deepspeed3_params=self.args.ds3_gather_for_generation
+                ) as unwrapped_model:
+                    if is_compiled_module(unwrapped_model):
+                        state_dict = unwrapped_model._orig_mod.state_dict()
+                    else:
+                        state_dict = unwrapped_model.state_dict()
+                if self.accelerator.is_main_process:
+                    llm_model = self.llm.llm_engine.model_executor.driver_worker.model_runner.model
+                    llm_model.load_weights(state_dict.items())
                 self._last_loaded_step = self.state.global_step
 
             # Generate completions using vLLM: gather all prompts and use them in a single call in the main process
@@ -534,6 +595,10 @@ class GRPOTrainer(Trainer):
 
         # Decode the generated completions
         completions_text = self.processing_class.batch_decode(completion_ids, skip_special_tokens=True)
+
+        # Store the latest completions
+        self._last_logged_completions = completions_text
+
         if is_conversational(inputs[0]):
             completions = [[{"role": "assistant", "content": completion}] for completion in completions_text]
         else:
@@ -674,6 +739,19 @@ class GRPOTrainer(Trainer):
             metrics = {f"eval_{key}": val for key, val in metrics.items()}
 
         logs = {**logs, **metrics}
+
+        # Add the most recent prompt for debugging purposes
+        if hasattr(self, "_last_logged_prompts") and self._last_logged_prompts:
+            logs["example_prompt"] = self._last_logged_prompts[0]  # Only log the first one
+        if hasattr(self, "_last_logged_completions") and self._last_logged_completions:
+            logs["example_completion"] = self._last_logged_completions[0] # Only log the first one
+        # Log the ground truth if available
+        if hasattr(self, "_last_logged_ground_truth") and self._last_logged_ground_truth:
+            logs["example_ground_truth"] = self._last_logged_ground_truth[0]
+        # Log the image path (or file name) if available
+        if hasattr(self, "_last_logged_images") and self._last_logged_images:
+            logs["example_image_path"] = self._last_logged_images[0]
+            
         if version.parse(transformers.__version__) >= version.parse("4.47.0.dev0"):
             super().log(logs, start_time)
         else:  # transformers<=4.46

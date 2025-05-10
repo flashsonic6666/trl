@@ -9,6 +9,21 @@
 _tmp*
 tmp*
 tags
+*.txt
+
+# Checkpoints
+Qwen2-*
+Qwen2.5-*
+
+# Model Output Files
+scripts/outputs/
+
+# Images
+pubchem
+indigo_simple_render
+synthetic
+sft_qwen2_dataset
+data_organometallic
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -143,3 +158,6 @@ checklink/cookies.txt
 nbs/wandb/
 examples/notebooks/wandb/
 wandb/
+
+# deepspeed env
+.deepspeed_env
